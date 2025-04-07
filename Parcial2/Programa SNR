@@ -1,0 +1,115 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+// Definición del tamaño del buffer
+#define TAM 1024
+
+// Función para verificar si un carácter es un delimitador (espacio, puntuación o fin de cadena)
+int esDelimitador(char);
+
+// Función que reemplaza una palabra dentro de una línea y escribe el resultado en el archivo de salida
+void reemplazarPalabra(char *, const char *, const char *, int);
+
+// Función que lee un archivo, reemplaza las palabras y escribe el resultado en un nuevo archivo
+void cambiaPalabraArchivo(const char *, const char *, const char *, const char *);
+
+int main(int argc, char *argv[]) {
+    // Verifica si el número de argumentos es el esperado
+    if (argc != 5) {
+        // Si no se pasan los 4 argumentos necesarios, muestra un mensaje de uso
+        printf("Uso: %s palabra_vieja palabra_nueva archivo_entrada archivo_salida\n", argv[0]);
+        return 1; // Termina el programa con error
+    }
+
+    // Llama a la función para cambiar la palabra en el archivo
+    cambiaPalabraArchivo(argv[1], argv[2], argv[3], argv[4]);
+    printf("Listo!\n"); // Muestra que el proceso terminó
+
+    return 0; // Fin del programa
+}
+
+// Función para verificar si un carácter es un delimitador (espacio, puntuación o fin de cadena)
+int esDelimitador(char c) {
+    return isspace(c) || ispunct(c) || c == '\0'; // Devuelve verdadero si es espacio, puntuación o fin de cadena
+}
+
+// Función que reemplaza una palabra dentro de una línea y la escribe en el archivo de salida
+void reemplazarPalabra(char *linea, const char *word1, const char *word2, int fdSalida) {
+    char nuevaLinea[TAM]; // Almacena la nueva línea con las palabras reemplazadas
+    int i = 0, j = 0;     // i recorre la línea original, j recorre la nueva línea
+    int len1 = strlen(word1); // Longitud de la palabra vieja
+    int len2 = strlen(word2); // Longitud de la palabra nueva
+
+    // Recorre la línea completa
+    while (linea[i] != '\0') {
+        // Si encuentra la palabra vieja (word1) y está rodeada por delimitadores
+        if ((i == 0 || esDelimitador(linea[i - 1])) &&
+            strncmp(&linea[i], word1, len1) == 0 && // Compara el inicio de la palabra
+            esDelimitador(linea[i + len1])) {        // Verifica que el siguiente carácter sea un delimitador
+            // Copia la palabra nueva (word2) en la nueva línea
+            memcpy(&nuevaLinea[j], word2, len2);
+            j += len2; // Incrementa j para seguir escribiendo en la nueva línea
+            i += len1; // Salta la longitud de la palabra vieja
+        } else {
+            // Si no se encuentra la palabra vieja, copia el carácter tal como está
+            nuevaLinea[j++] = linea[i++];
+        }
+    }
+    nuevaLinea[j] = '\0'; // Termina la nueva línea
+
+    // Escribe la nueva línea (con las palabras reemplazadas) en el archivo de salida
+    write(fdSalida, nuevaLinea, strlen(nuevaLinea));
+}
+
+// Función que lee el archivo de entrada, reemplaza las palabras y las escribe en el archivo de salida
+void cambiaPalabraArchivo(const char *word1, const char *word2, const char *a1, const char *a2) {
+    // Abre el archivo de entrada en modo lectura
+    int fdEntrada = open(a1, O_RDONLY);
+    if (fdEntrada < 0) {
+        // Si no puede abrir el archivo de entrada, muestra un error
+        perror("Error al abrir archivo fuente");
+        exit(1); // Termina el programa con error
+    }
+
+    // Abre el archivo de salida en modo escritura (crea el archivo si no existe, trunca si ya existe)
+    int fdSalida = open(a2, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fdSalida < 0) {
+        // Si no puede abrir el archivo de salida, muestra un error
+        perror("Error al abrir archivo destino");
+        close(fdEntrada); // Cierra el archivo de entrada
+        exit(1); // Termina el programa con error
+    }
+
+    char buffer[TAM]; // Buffer para leer el archivo en bloques
+    char linea[TAM];  // Buffer para almacenar la línea actual leída
+    int bytesLeidos, i = 0;
+
+    // Lee el archivo de entrada en bloques de tamaño TAM
+    while ((bytesLeidos = read(fdEntrada, buffer, TAM)) > 0) {
+        // Procesa cada byte leído del archivo
+        for (int j = 0; j < bytesLeidos; j++) {
+            linea[i++] = buffer[j]; // Copia el byte al buffer de la línea
+            // Si encuentra un salto de línea o alcanza el tamaño máximo del buffer
+            if (buffer[j] == '\0' || i >= TAM - 1) {
+                linea[i] = '\0'; // Termina la línea
+                reemplazarPalabra(linea, word1, word2, fdSalida); // Reemplaza las palabras en la línea
+                write(fdSalida, "", 1); // Escribe un salto de línea vacío en el archivo de salida
+                i = 0; // Resetea el índice para procesar la siguiente línea
+            }
+        }
+    }
+
+    // Si el archivo de entrada no termina con un salto de línea, procesa la última línea
+    if (i > 0) {
+        linea[i] = '\0'; // Termina la última línea
+        reemplazarPalabra(linea, word1, word2, fdSalida); // Reemplaza las palabras
+    }
+
+    // Cierra los archivos
+    close(fdEntrada);
+    close(fdSalida);
+}
